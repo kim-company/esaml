@@ -16,12 +16,14 @@
 	url = "" :: esaml:localized_string()}).
 
 -record(esaml_contact, {
+	type = technical :: esaml:contact_type(),
 	name = "" :: string(),
-	email = "" :: string()}).
+	email = "" :: string(),
+	phone_number = [] :: [string()]}).
 
 -record(esaml_sp_metadata, {
 	org = #esaml_org{} :: esaml:org(),
-	tech = #esaml_contact{} :: esaml:contact(),
+	contacts = [] :: [esaml:contact()],
 	signed_requests = true :: boolean(),
 	signed_assertions = true :: boolean(),
 	certificate :: binary() | undefined,
@@ -32,7 +34,7 @@
 
 -record(esaml_idp_metadata, {
 	org = #esaml_org{} :: esaml:org(),
-	tech = #esaml_contact{} :: esaml:contact(),
+	contacts = [] :: [esaml:contact()],
 	signed_requests = true :: boolean(),
 	certificate :: binary() | undefined,
 	entity_id = "" :: string(),
@@ -98,7 +100,7 @@
 
 -record(esaml_sp, {
 	org = #esaml_org{} :: esaml:org(),
-	tech = #esaml_contact{} :: esaml:contact(),
+	contacts = [] :: [esaml:contact()],
 	key :: #'RSAPrivateKey'{} | undefined,
 	certificate :: binary() | undefined,
 	cert_chain = [] :: [binary()],

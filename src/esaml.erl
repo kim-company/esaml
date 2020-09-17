@@ -22,6 +22,7 @@
 
 -type org() :: #esaml_org{}.
 -type contact() :: #esaml_contact{}.
+-type contact_type() :: technical | support | administrative | billing | other.
 -type sp_metadata() :: #esaml_sp_metadata{}.
 -type idp_metadata() :: #esaml_idp_metadata{}.
 -type authnreq() :: #esaml_authnreq{}.
@@ -33,8 +34,7 @@
 -type sp() :: #esaml_sp{}.
 -type saml_record() :: org() | contact() | sp_metadata() | idp_metadata() | authnreq() | subject() | assertion() | logoutreq() | logoutresp() | response().
 
--export_type([org/0, contact/0, sp_metadata/0, idp_metadata/0,
-    authnreq/0, subject/0, assertion/0, logoutreq/0,
+-export_type([org/0, contact/0, contact_type/0,sp_metadata/0, idp_metadata/0,
     logoutresp/0, response/0, sp/0, saml_record/0]).
 
 -type localized_string() :: string() | [{Locale :: atom(), LocalizedString :: string()}].
@@ -163,7 +163,7 @@ decode_idp_metadata(Xml) ->
         ?xpath_text("/md:EntityDescriptor/md:IDPSSODescriptor/md:NameIDFormat/text()",
             esaml_idp_metadata, name_format, fun nameid_map/1),
         ?xpath_text("/md:EntityDescriptor/md:IDPSSODescriptor/md:KeyDescriptor[@use='signing']/ds:KeyInfo/ds:X509Data/ds:X509Certificate/text()", esaml_idp_metadata, certificate, fun(X) -> base64:decode(list_to_binary(X)) end),
-        ?xpath_recurse("/md:EntityDescriptor/md:ContactPerson[@contactType='technical']", esaml_idp_metadata, tech, decode_contact),
+        ?xpath_recurse("/md:EntityDescriptor/md:ContactPerson", esaml_idp_metadata, contacts, decode_contact),
         ?xpath_recurse("/md:EntityDescriptor/md:Organization", esaml_idp_metadata, org, decode_org)
     ], #esaml_idp_metadata{}).
 
@@ -180,16 +180,25 @@ decode_org(Xml) ->
     ], #esaml_org{}).
 
 %% @private
--spec decode_contact(Xml :: #xmlElement{}) -> {ok, #esaml_contact{}} | {error, term()}.
-decode_contact(Xml) ->
+-spec decode_contact(Xml :: [#xmlElement{}]) -> {ok, [#esaml_contact{}]} | {error, term()}.
+decode_contact(Xmls) ->
     Ns = [{"samlp", 'urn:oasis:names:tc:SAML:2.0:protocol'},
           {"saml", 'urn:oasis:names:tc:SAML:2.0:assertion'},
           {"md", 'urn:oasis:names:tc:SAML:2.0:metadata'}],
+    Contacts = lists:map(fun(Xml) ->
     esaml_util:threaduntil([
         ?xpath_text_required("/md:ContactPerson/md:EmailAddress/text()", esaml_contact, email, bad_contact),
         ?xpath_text("/md:ContactPerson/md:GivenName/text()", esaml_contact, name),
         ?xpath_text_append("/md:ContactPerson/md:SurName/text()", esaml_contact, name, " ")
-    ], #esaml_contact{}).
+        ], #esaml_contact{})
+    end, Xmls),
+
+    case lists:keyfind(Contacts, 1, error) of
+        false ->
+            {ok, lists:map(Contacts, fun({ok, Contact}) -> Contact end)};
+        {error, term} ->
+            {error, term}
+    end.
 
 %% @private
 -spec decode_logout_request(Xml :: #xmlElement{}) -> {ok, #esaml_logoutreq{}} | {error, term()}.
@@ -507,7 +516,7 @@ to_xml(#esaml_logoutresp{version = V, issue_instant  = Time,
 
   to_xml(#esaml_sp_metadata{org = #esaml_org{name = OrgName, displayname = OrgDisplayName,
                                              url = OrgUrl },
-                         tech = #esaml_contact{name = TechName, email = TechEmail},
+                         contacts = Contacts,
                          signed_requests = SignReq, signed_assertions = SignAss,
                          certificate = CertBin, cert_chain = CertChain, entity_id = EntityID,
                          consumer_location = ConsumerLoc,
@@ -575,13 +584,16 @@ to_xml(#esaml_logoutresp{version = V, issue_instant  = Time,
               lang_elems(#xmlElement{name = 'md:OrganizationURL'}, OrgUrl)
       },
 
-      ContactElem = #xmlElement{name = 'md:ContactPerson',
-          attributes = [#xmlAttribute{name = 'contactType', value = "technical"}],
+      ContactElems = lists:map(fun(#esaml_contact{type = Type, name = Name, email = Email, phone_number = PhoneNumber}) ->
+          #xmlElement{name = 'md:ContactPerson',
+          attributes = [#xmlAttribute{name = 'contactType', value = atom_to_list(Type)}],
           content = [
-              #xmlElement{name = 'md:SurName', content = [#xmlText{value = TechName}]},
-              #xmlElement{name = 'md:EmailAddress', content = [#xmlText{value = TechEmail}]}
+              #xmlElement{name = 'md:SurName', content = [#xmlText{value = Name}]},
+              #xmlElement{name = 'md:EmailAddress', content = [#xmlText{value = Email}]},
+              #xmlElement{name = 'md:TelephoneNumber', content = [#xmlText{value = PhoneNumber}]}
           ]
-      },
+      }
+      end, Contacts),
 
       SPSSODescriptorElem = #xmlElement{name = 'md:SPSSODescriptor',
           attributes = [#xmlAttribute{name = 'protocolSupportEnumeration', value = "urn:oasis:names:tc:SAML:2.0:protocol"},
@@ -599,9 +611,8 @@ to_xml(#esaml_logoutresp{version = V, issue_instant  = Time,
               #xmlAttribute{name = 'entityID', value = EntityID}
           ], content = [
               SPSSODescriptorElem,
-              OrganizationElem,
-              ContactElem
-          ]
+              OrganizationElem
+          ] ++ ContactElems
       });
 
 to_xml(_) -> error("unknown record").

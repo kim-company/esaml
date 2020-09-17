@@ -124,11 +124,11 @@ generate_logout_response(IdpURL, Status, SP = #esaml_sp{metadata_uri = _MetaURI}
 
 %% @doc Return the SP metadata as an XML element
 -spec generate_metadata(esaml:sp()) -> #xmlElement{}.
-generate_metadata(SP = #esaml_sp{org = Org, tech = Tech}) ->
+generate_metadata(SP = #esaml_sp{org = Org, contacts = Contacts}) ->
     EntityID = get_entity_id(SP),
     Xml = esaml:to_xml(#esaml_sp_metadata{
         org = Org,
-        tech = Tech,
+        contacts = Contacts,
         signed_requests = SP#esaml_sp.sp_sign_requests,
         signed_assertions = SP#esaml_sp.idp_signs_assertions or SP#esaml_sp.idp_signs_envelopes,
         certificate = SP#esaml_sp.certificate,
