@@ -48,7 +48,8 @@
 	destination = "" :: string(),
 	issuer = "" :: string(),
 	name_format = undefined :: undefined | string(),
-	consumer_location = "" :: string()}).
+	consumer_location = "" :: string(),
+	requested_context = unknown :: esaml:requested_authn_context()}).
 
 -record(esaml_subject, {
 	name = "" :: string(),
@@ -96,6 +97,10 @@
 	status = unknown :: esaml:status_code(),
 	assertion = #esaml_assertion{} :: esaml:assertion()}).
 
+-record(esaml_requested_authn_context, {
+	class_ref = [] :: [string()],
+	decl_ref = [] :: [string()]}).
+
 %% state records
 
 -record(esaml_sp, {
@@ -114,4 +119,5 @@
 	consume_uri = "" :: string(),
 	logout_uri :: string() | undefined,
 	encrypt_mandatory = false :: boolean(),
-	entity_id :: string() | undefined}).
+	entity_id :: string() | undefined,
+	requested_context = unknown :: esaml:requested_authn_context()}).

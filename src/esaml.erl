@@ -26,6 +26,7 @@
 -type sp_metadata() :: #esaml_sp_metadata{}.
 -type idp_metadata() :: #esaml_idp_metadata{}.
 -type authnreq() :: #esaml_authnreq{}.
+-type requested_authn_context() :: #esaml_requested_authn_context{}.
 -type subject() :: #esaml_subject{}.
 -type assertion() :: #esaml_assertion{}.
 -type logoutreq() :: #esaml_logoutreq{}.
@@ -35,6 +36,7 @@
 -type saml_record() :: org() | contact() | sp_metadata() | idp_metadata() | authnreq() | subject() | assertion() | logoutreq() | logoutresp() | response().
 
 -export_type([org/0, contact/0, contact_type/0,sp_metadata/0, idp_metadata/0,
+    authnreq/0, requested_authn_context/0, subject/0, assertion/0, logoutreq/0,
     logoutresp/0, response/0, sp/0, saml_record/0]).
 
 -type localized_string() :: string() | [{Locale :: atom(), LocalizedString :: string()}].
@@ -186,10 +188,10 @@ decode_contact(Xmls) ->
           {"saml", 'urn:oasis:names:tc:SAML:2.0:assertion'},
           {"md", 'urn:oasis:names:tc:SAML:2.0:metadata'}],
     Contacts = lists:map(fun(Xml) ->
-    esaml_util:threaduntil([
-        ?xpath_text_required("/md:ContactPerson/md:EmailAddress/text()", esaml_contact, email, bad_contact),
-        ?xpath_text("/md:ContactPerson/md:GivenName/text()", esaml_contact, name),
-        ?xpath_text_append("/md:ContactPerson/md:SurName/text()", esaml_contact, name, " ")
+        esaml_util:threaduntil([
+            ?xpath_text_required("/md:ContactPerson/md:EmailAddress/text()", esaml_contact, email, bad_contact),
+            ?xpath_text("/md:ContactPerson/md:GivenName/text()", esaml_contact, name),
+            ?xpath_text_append("/md:ContactPerson/md:SurName/text()", esaml_contact, name, " ")
         ], #esaml_contact{})
     end, Xmls),
 
@@ -439,10 +441,10 @@ lang_elems(BaseTag, Val) ->
 %% @private
 -spec to_xml(saml_record()) -> #xmlElement{}.
 to_xml(#esaml_authnreq{version = V, issue_instant = Time, destination = Dest,
-        issuer = Issuer, name_format = Format, consumer_location = Consumer}) ->
+        issuer = Issuer, name_format = Format, consumer_location = Consumer,
+        requested_context = RequestedContext}) ->
     Ns = #xmlNamespace{nodes = [{"samlp", 'urn:oasis:names:tc:SAML:2.0:protocol'},
                                 {"saml", 'urn:oasis:names:tc:SAML:2.0:assertion'}]},
-
     esaml_util:build_nsinfo(Ns, #xmlElement{name = 'samlp:AuthnRequest',
         attributes = [#xmlAttribute{name = 'xmlns:samlp', value = proplists:get_value("samlp", Ns#xmlNamespace.nodes)},
                       #xmlAttribute{name = 'xmlns:saml', value = proplists:get_value("saml", Ns#xmlNamespace.nodes)},
@@ -452,6 +454,14 @@ to_xml(#esaml_authnreq{version = V, issue_instant = Time, destination = Dest,
                       #xmlAttribute{name = 'AssertionConsumerServiceURL', value = Consumer},
                       #xmlAttribute{name = 'ProtocolBinding', value = "urn:oasis:names:tc:SAML:2.0:bindings:HTTP-POST"}],
         content = [#xmlElement{name = 'saml:Issuer', content = [#xmlText{value = Issuer}]}] ++
+              case RequestedContext of
+              unknown ->
+                  [];
+              #esaml_requested_authn_context{class_ref = ClassRefs, decl_ref = DeclRefs} ->
+                  [#xmlElement{name = 'samlp:RequestedAuthnContext',
+                      content = lists:map(fun(ClassRef) -> #xmlElement{name = 'saml:AuthnContextClassRef', content = [#xmlText{value = ClassRef}]} end, ClassRefs) ++
+                                  lists:map(fun(DeclRef) -> #xmlElement{name = 'saml:AuthnContextDeclRef', content = [#xmlText{value = DeclRef}]} end, DeclRefs)}]
+              end ++
               case is_list(Format) of
                 true ->
                     [#xmlElement{name = 'samlp:NameIDPolicy',
@@ -514,8 +524,8 @@ to_xml(#esaml_logoutresp{version = V, issue_instant  = Time,
         ]
     });
 
-  to_xml(#esaml_sp_metadata{org = #esaml_org{name = OrgName, displayname = OrgDisplayName,
-                                             url = OrgUrl },
+to_xml(#esaml_sp_metadata{org = #esaml_org{name = OrgName, displayname = OrgDisplayName,
+                                           url = OrgUrl },
                          contacts = Contacts,
                          signed_requests = SignReq, signed_assertions = SignAss,
                          certificate = CertBin, cert_chain = CertChain, entity_id = EntityID,

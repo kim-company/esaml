@@ -41,11 +41,23 @@ get_entity_id(#esaml_sp{entity_id = EntityID, metadata_uri = MetaURI}) ->
     end.
 
 %% @private
--spec reorder_issuer(xml()) -> xml().
-reorder_issuer(Elem) ->
-    case lists:partition(fun(#xmlElement{name = N}) -> N == 'saml:Issuer' end, Elem#xmlElement.content) of
-        {[Issuer], Other} -> Elem#xmlElement{content = [Issuer | Other]};
-        _ -> Elem
+-spec reorder(xml()) -> xml().
+reorder(Elem) ->
+    case lists:partition(fun(#xmlElement{name = N}) -> (N == 'saml:Issuer') or (N == 'ds:Signature') end, Elem#xmlElement.content) of
+        {IssuerAndSignature, Other} ->
+            Content1 = case lists:keyfind('ds:Signature', 2, IssuerAndSignature) of
+                false -> Other;
+                Signature -> [Signature | Other]
+            end,
+            Content2 = case lists:keyfind('saml:Issuer', 2, IssuerAndSignature) of
+                false -> Content1;
+                Issuer -> [Issuer | Content1]
+            end,
+
+            Elem#xmlElement{content = Content2};
+
+        _ ->
+            Elem
     end.
 
 %% @doc Return an AuthnRequest as an XML element
@@ -57,7 +69,7 @@ generate_authn_request(IdpURL, SP = #esaml_sp{}) ->
 %% @doc Return an AuthnRequest as an XML element
 -spec generate_authn_request(IdpURL :: string(), esaml:sp(), Format :: nameid_format()) -> #xmlElement{}.
 generate_authn_request(IdpURL,
-        SP = #esaml_sp{metadata_uri = _MetaURI, consume_uri = ConsumeURI},
+        SP = #esaml_sp{metadata_uri = _MetaURI, consume_uri = ConsumeURI, requested_context = RequestedContext},
         Format) ->
     Now = erlang:localtime_to_universaltime(erlang:localtime()),
     Stamp = esaml_util:datetime_to_saml(Now),
@@ -67,9 +79,10 @@ generate_authn_request(IdpURL,
                                        destination = IdpURL,
                                        issuer = Issuer,
                                        name_format = Format,
-                                       consumer_location = ConsumeURI}),
+                                       consumer_location = ConsumeURI,
+                                       requested_context = RequestedContext}),
     if SP#esaml_sp.sp_sign_requests ->
-        reorder_issuer(xmerl_dsig:sign(Xml, SP#esaml_sp.key, SP#esaml_sp.certificate));
+        reorder(xmerl_dsig:sign(Xml, SP#esaml_sp.key, SP#esaml_sp.certificate));
     true ->
         add_xml_id(Xml)
     end.
@@ -100,7 +113,7 @@ generate_logout_request(IdpURL, SessionIndex, Subject = #esaml_subject{}, SP = #
                                        session_index = SessionIndex,
                                        reason = user}),
     if SP#esaml_sp.sp_sign_requests ->
-        reorder_issuer(xmerl_dsig:sign(Xml, SP#esaml_sp.key, SP#esaml_sp.certificate));
+        reorder(xmerl_dsig:sign(Xml, SP#esaml_sp.key, SP#esaml_sp.certificate));
     true ->
         add_xml_id(Xml)
     end.
@@ -117,7 +130,7 @@ generate_logout_response(IdpURL, Status, SP = #esaml_sp{metadata_uri = _MetaURI}
                                        issuer = Issuer,
                                        status = Status}),
     if SP#esaml_sp.sp_sign_requests ->
-        reorder_issuer(xmerl_dsig:sign(Xml, SP#esaml_sp.key, SP#esaml_sp.certificate));
+        reorder(xmerl_dsig:sign(Xml, SP#esaml_sp.key, SP#esaml_sp.certificate));
     true ->
         add_xml_id(Xml)
     end.
