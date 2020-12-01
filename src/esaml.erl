@@ -34,10 +34,11 @@
 -type response() :: #esaml_response{}.
 -type sp() :: #esaml_sp{}.
 -type saml_record() :: org() | contact() | sp_metadata() | idp_metadata() | authnreq() | subject() | assertion() | logoutreq() | logoutresp() | response().
+-type binding() :: post | redirect.
 
 -export_type([org/0, contact/0, contact_type/0,sp_metadata/0, idp_metadata/0,
     authnreq/0, requested_authn_context/0, subject/0, assertion/0, logoutreq/0,
-    logoutresp/0, response/0, sp/0, saml_record/0]).
+    logoutresp/0, response/0, sp/0, saml_record/0, binding/0]).
 
 -type localized_string() :: string() | [{Locale :: atom(), LocalizedString :: string()}].
 -type name_format() :: email | x509 | windows | krb | persistent | transient | unknown.
@@ -158,10 +159,10 @@ decode_idp_metadata(Xml) ->
           {"ds", 'http://www.w3.org/2000/09/xmldsig#'}],
     esaml_util:threaduntil([
         ?xpath_attr_required("/md:EntityDescriptor/@entityID", esaml_idp_metadata, entity_id, bad_entity),
-        ?xpath_attr_required("/md:EntityDescriptor/md:IDPSSODescriptor/md:SingleSignOnService[@Binding='urn:oasis:names:tc:SAML:2.0:bindings:HTTP-POST']/@Location",
-            esaml_idp_metadata, login_location, missing_sso_location),
-        ?xpath_attr("/md:EntityDescriptor/md:IDPSSODescriptor/md:SingleLogoutService[@Binding='urn:oasis:names:tc:SAML:2.0:bindings:HTTP-POST']/@Location",
-            esaml_idp_metadata, logout_location),
+        % ?xpath_attr_required("/md:EntityDescriptor/md:IDPSSODescriptor/md:SingleSignOnService[@Binding='urn:oasis:names:tc:SAML:2.0:bindings:HTTP-POST']/@Location",
+        %     esaml_idp_metadata, login_location, missing_sso_location),
+        % ?xpath_attr("/md:EntityDescriptor/md:IDPSSODescriptor/md:SingleLogoutService[@Binding='urn:oasis:names:tc:SAML:2.0:bindings:HTTP-POST']/@Location",
+        %     esaml_idp_metadata, logout_location),
         ?xpath_text("/md:EntityDescriptor/md:IDPSSODescriptor/md:NameIDFormat/text()",
             esaml_idp_metadata, name_format, fun nameid_map/1),
         ?xpath_text("/md:EntityDescriptor/md:IDPSSODescriptor/md:KeyDescriptor[@use='signing']/ds:KeyInfo/ds:X509Data/ds:X509Certificate/text()", esaml_idp_metadata, certificate, fun(X) -> base64:decode(list_to_binary(X)) end),
@@ -208,6 +209,7 @@ decode_logout_request(Xml) ->
     Ns = [{"samlp", 'urn:oasis:names:tc:SAML:2.0:protocol'},
           {"saml", 'urn:oasis:names:tc:SAML:2.0:assertion'}],
     esaml_util:threaduntil([
+        ?xpath_attr_required("/samlp:LogoutRequest/@ID", esaml_logoutreq, id, bad_version),
         ?xpath_attr_required("/samlp:LogoutRequest/@Version", esaml_logoutreq, version, bad_version),
         ?xpath_attr_required("/samlp:LogoutRequest/@IssueInstant", esaml_logoutreq, issue_instant, bad_response),
         ?xpath_text_required("/samlp:LogoutRequest/saml:NameID/text()", esaml_logoutreq, name, bad_name),
@@ -442,7 +444,7 @@ lang_elems(BaseTag, Val) ->
 -spec to_xml(saml_record()) -> #xmlElement{}.
 to_xml(#esaml_authnreq{version = V, issue_instant = Time, destination = Dest,
         issuer = Issuer, name_format = Format, consumer_location = Consumer,
-        requested_context = RequestedContext}) ->
+        requested_context = RequestedContext, binding = Binding}) ->
     Ns = #xmlNamespace{nodes = [{"samlp", 'urn:oasis:names:tc:SAML:2.0:protocol'},
                                 {"saml", 'urn:oasis:names:tc:SAML:2.0:assertion'}]},
     esaml_util:build_nsinfo(Ns, #xmlElement{name = 'samlp:AuthnRequest',
@@ -452,7 +454,7 @@ to_xml(#esaml_authnreq{version = V, issue_instant = Time, destination = Dest,
                       #xmlAttribute{name = 'Version', value = V},
                       #xmlAttribute{name = 'Destination', value = Dest},
                       #xmlAttribute{name = 'AssertionConsumerServiceURL', value = Consumer},
-                      #xmlAttribute{name = 'ProtocolBinding', value = "urn:oasis:names:tc:SAML:2.0:bindings:HTTP-POST"}],
+                      #xmlAttribute{name = 'ProtocolBinding', value = protocol_binding(Binding)}],
         content = [#xmlElement{name = 'saml:Issuer', content = [#xmlText{value = Issuer}]}] ++
               case RequestedContext of
               unknown ->
@@ -507,7 +509,7 @@ to_xml(#esaml_logoutreq{version = V, issue_instant = Time, destination = Dest, i
     });
 
 to_xml(#esaml_logoutresp{version = V, issue_instant  = Time,
-    destination = Dest, issuer = Issuer, status = Status}) ->
+    destination = Dest, issuer = Issuer, status = Status, in_response_to = InResponseTo}) ->
     Ns = #xmlNamespace{nodes = [{"samlp", 'urn:oasis:names:tc:SAML:2.0:protocol'},
                                 {"saml", 'urn:oasis:names:tc:SAML:2.0:assertion'}]},
     esaml_util:build_nsinfo(Ns, #xmlElement{name = 'samlp:LogoutResponse',
@@ -515,12 +517,14 @@ to_xml(#esaml_logoutresp{version = V, issue_instant  = Time,
                       #xmlAttribute{name = 'xmlns:saml', value = proplists:get_value("saml", Ns#xmlNamespace.nodes)},
                       #xmlAttribute{name = 'IssueInstant', value = Time},
                       #xmlAttribute{name = 'Version', value = V},
-                      #xmlAttribute{name = 'Destination', value = Dest}],
+                      #xmlAttribute{name = 'Destination', value = Dest},
+                      #xmlAttribute{name = 'InResponseTo', value = InResponseTo}],
         content = [
             #xmlElement{name = 'saml:Issuer', content = [#xmlText{value = Issuer}]},
             #xmlElement{name = 'samlp:Status', content = [
-                    #xmlElement{name = 'samlp:StatusCode', content = [
-                        #xmlText{value = rev_status_code_map(Status)}]}]}
+                    #xmlElement{name = 'samlp:StatusCode', attributes = [
+                        #xmlAttribute{name = 'Value', value = rev_status_code_map(Status)}]
+                    }]}
         ]
     });
 
@@ -627,6 +631,8 @@ to_xml(#esaml_sp_metadata{org = #esaml_org{name = OrgName, displayname = OrgDisp
 
 to_xml(_) -> error("unknown record").
 
+protocol_binding(post) -> "urn:oasis:names:tc:SAML:2.0:bindings:HTTP-POST";
+protocol_binding(redirect) -> "urn:oasis:names:tc:SAML:2.0:bindings:HTTP-Redirect".
 
 -ifdef(TEST).
 -include_lib("eunit/include/eunit.hrl").

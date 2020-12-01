@@ -12,9 +12,9 @@
 -include("esaml.hrl").
 -include_lib("xmerl/include/xmerl.hrl").
 
--export([setup/1, generate_authn_request/2, generate_authn_request/3, generate_metadata/1]).
+-export([setup/1, generate_authn_request/2, generate_authn_request/3, generate_authn_request/4, generate_metadata/1]).
 -export([validate_assertion/2, validate_assertion/3]).
--export([generate_logout_request/3, generate_logout_request/4, generate_logout_response/3]).
+-export([generate_logout_request/3, generate_logout_request/4, generate_logout_response/3, generate_logout_response/4]).
 -export([validate_logout_request/2, validate_logout_response/2]).
 
 -type xml() :: #xmlElement{} | #xmlDocument{}.
@@ -66,11 +66,15 @@ reorder(Elem) ->
 generate_authn_request(IdpURL, SP = #esaml_sp{}) ->
     generate_authn_request(IdpURL, SP, undefined).
 
-%% @doc Return an AuthnRequest as an XML element
 -spec generate_authn_request(IdpURL :: string(), esaml:sp(), Format :: nameid_format()) -> #xmlElement{}.
+generate_authn_request(IdpURL, SP, Format) ->
+    generate_authn_request(IdpURL, SP, Format, post).
+
+%% @doc Return an AuthnRequest as an XML element
+-spec generate_authn_request(IdpURL :: string(), esaml:sp(), Format :: nameid_format(), Binding :: post | redirect) -> #xmlElement{}.
 generate_authn_request(IdpURL,
         SP = #esaml_sp{metadata_uri = _MetaURI, consume_uri = ConsumeURI, requested_context = RequestedContext},
-        Format) ->
+        Format, Binding) ->
     Now = erlang:localtime_to_universaltime(erlang:localtime()),
     Stamp = esaml_util:datetime_to_saml(Now),
     Issuer = get_entity_id(SP),
@@ -80,7 +84,8 @@ generate_authn_request(IdpURL,
                                        issuer = Issuer,
                                        name_format = Format,
                                        consumer_location = ConsumeURI,
-                                       requested_context = RequestedContext}),
+                                       requested_context = RequestedContext,
+                                       binding = Binding}),
     if SP#esaml_sp.sp_sign_requests ->
         reorder(xmerl_dsig:sign(Xml, SP#esaml_sp.key, SP#esaml_sp.certificate));
     true ->
@@ -121,6 +126,10 @@ generate_logout_request(IdpURL, SessionIndex, Subject = #esaml_subject{}, SP = #
 %% @doc Return a LogoutResponse as an XML element
 -spec generate_logout_response(IdpURL :: string(), esaml:status_code(), esaml:sp()) -> #xmlElement{}.
 generate_logout_response(IdpURL, Status, SP = #esaml_sp{metadata_uri = _MetaURI}) ->
+    generate_logout_response(IdpURL, Status, SP, "").
+
+-spec generate_logout_response(IdpURL :: string(), esaml:status_code(), esaml:sp(), InResponseTo :: string) -> #xmlElement{}.
+generate_logout_response(IdpURL, Status, SP = #esaml_sp{metadata_uri = _MetaURI}, InResponseTo) ->
     Now = erlang:localtime_to_universaltime(erlang:localtime()),
     Stamp = esaml_util:datetime_to_saml(Now),
     Issuer = get_entity_id(SP),
@@ -128,7 +137,8 @@ generate_logout_response(IdpURL, Status, SP = #esaml_sp{metadata_uri = _MetaURI}
     Xml = esaml:to_xml(#esaml_logoutresp{issue_instant = Stamp,
                                        destination = IdpURL,
                                        issuer = Issuer,
-                                       status = Status}),
+                                       status = Status,
+                                       in_response_to = InResponseTo}),
     if SP#esaml_sp.sp_sign_requests ->
         reorder(xmerl_dsig:sign(Xml, SP#esaml_sp.key, SP#esaml_sp.certificate));
     true ->

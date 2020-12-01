@@ -38,8 +38,17 @@
 	signed_requests = true :: boolean(),
 	certificate :: binary() | undefined,
 	entity_id = "" :: string(),
-	login_location = "" :: string(),
-	logout_location :: string() | undefined,
+
+	sso_redirect_url = "" :: string(),
+	sso_post_url = "" :: string(),
+	sso_request_binding = post :: esaml:binding(),
+	sso_response_binding = post :: esaml:binding(),
+
+	slo_redirect_url = "" :: string(),
+	slo_post_url = "" :: string(),
+	slo_request_binding = post :: esaml:binding(),
+	slo_response_binding = post :: esaml:binding(),
+
 	name_format = unknown :: esaml:name_format()}).
 
 -record(esaml_authnreq, {
@@ -49,7 +58,8 @@
 	issuer = "" :: string(),
 	name_format = undefined :: undefined | string(),
 	consumer_location = "" :: string(),
-	requested_context = unknown :: esaml:requested_authn_context()}).
+	requested_context = unknown :: esaml:requested_authn_context(),
+	binding = post :: post | redirect}).
 
 -record(esaml_subject, {
 	name = "" :: string(),
@@ -71,6 +81,7 @@
 	authn = [] :: proplists:proplist()}).
 
 -record(esaml_logoutreq, {
+	id = "" :: string(),
 	version = "2.0" :: esaml:version(),
 	issue_instant = "" :: esaml:datetime(),
 	destination = "" :: string(),
@@ -87,7 +98,8 @@
 	issue_instant = "" :: esaml:datetime(),
 	destination = "" :: string(),
 	issuer = "" :: string(),
-	status = unknown :: esaml:status_code()}).
+	status = unknown :: esaml:status_code(),
+	in_response_to = "" :: string()}).
 
 -record(esaml_response, {
 	version = "2.0" :: esaml:version(),
