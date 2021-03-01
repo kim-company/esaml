@@ -94,9 +94,9 @@ generate_post_html(Type, Dest, Req, RelayState, Nonce) ->
 </head>
 <body>
 <script ">>,NonceFragment,<<">
-document.addEventListener('DOMContentLoaded', function () {
+window.onload=function () {
 document.getElementById('saml-req-form').submit();
-});
+};
 </script>
 <noscript>
 <p><strong>Note:</strong> Since your browser does not support JavaScript, you must press the button below once to proceed.</p>
