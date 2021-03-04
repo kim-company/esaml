@@ -278,7 +278,18 @@ validate_assertion(Xml, DuplicateFun, SP = #esaml_sp{}) ->
                 _ ->
                     case xmerl_xpath:string("/samlp:Response/saml:Assertion", X, [{namespace, Ns}]) of
                         [A3] -> A3;
-                        _ -> {error, bad_assertion}
+                        _ ->
+                            case xmerl_xpath:string("/samlp:Response/samlp:Status/samlp:StatusCode/samlp:StatusCode/@Value", X, [{namespace, Ns}]) of
+                                [A4] ->
+                                    try
+                                        #xmlAttribute{value=StatusCode} = A4,
+                                        {error, {status_code, StatusCode}}
+                                    catch
+                                        _Error:_Reason -> {error, bad_assertion}
+                                    end;
+                                _ ->
+                                    {error, bad_assertion}
+                            end
                     end
             end
         end,
